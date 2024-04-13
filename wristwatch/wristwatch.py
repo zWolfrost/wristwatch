@@ -32,7 +32,7 @@ def get_args():
 	parser.add_argument("-o", "--output", type=str, help="Save the last fetch to a file.", metavar="FILE")
 	parser.add_argument("-i", "--input", type=str, help="Load the first fetch from a file.", metavar="FILE")
 
-	parser.add_argument("-v", "--version", action="version", version="%(prog)s 1.0.0")
+	parser.add_argument("-v", "--version", action="version", version="%(prog)s 1.0.2")
 
 	return vars(parser.parse_args())
 
@@ -231,7 +231,9 @@ def main():
 					print(f"Sending email to {ARGS['email']}...")
 					send_email(ARGS["email"], ARGS["email"], ARGS["password"], subject=f"Changes detected on {ARGS['webpage']}", body=diff)
 
-				if (not ARGS["loop"]):
+				if (ARGS["loop"]):
+					first_fetch = current_fetch
+				else:
 					break
 			else:
 				print(f"\rNo changes detected ({fetches} fetches).", end="")
