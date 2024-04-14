@@ -1,11 +1,11 @@
 #! venv/bin/python 
 
-import time, os, sys, argparse, difflib, rookiepy
+import time, os, sys, argparse, difflib, rookiepy, chime
 from urllib.parse import urlparse
 
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver import Chrome
-from selenium.common.exceptions import InvalidArgumentException
+from selenium.common.exceptions import InvalidArgumentException, WebDriverException
 
 from bs4 import BeautifulSoup
 from bs4.formatter import HTMLFormatter
@@ -15,7 +15,7 @@ from email.message import EmailMessage
 
 
 def get_args():
-	parser = argparse.ArgumentParser(description="Wristwatch is a simple tool to watch for changes on a webpage and notify you via email.", prog="wristwatch")
+	parser = argparse.ArgumentParser(description="Yet another Python watcher for website updates.", prog="wristwatch")
 
 	parser.add_argument("webpage", type=str, help="The URL of the webpage to scrape.", metavar="URL")
 
@@ -32,7 +32,9 @@ def get_args():
 	parser.add_argument("-o", "--output", type=str, help="Save the last fetch to a file.", metavar="FILE")
 	parser.add_argument("-i", "--input", type=str, help="Load the first fetch from a file.", metavar="FILE")
 
-	parser.add_argument("-v", "--version", action="version", version="%(prog)s 1.0.2")
+	parser.add_argument("-a", "--alert", help="Play a sound when changes are detected.", action="store_true")
+
+	parser.add_argument("-v", "--version", action="version", version="%(prog)s 1.1.0")
 
 	return vars(parser.parse_args())
 
@@ -88,25 +90,6 @@ def fetch_driver(driver: Chrome, selectors: str = None):
 		return fetch
 
 
-def print_text(text: str, line_numbers: bool = False, prefix: str = ""):
-	try:
-		max_length = os.get_terminal_size().columns
-	except:
-		max_length = None
-
-	break_line = "..."
-	padding = len(str(len(text.splitlines())))
-	for i, line in enumerate(text.splitlines()):
-		full_line = prefix
-		if (line_numbers): full_line += f"{str(i + 1).rjust(padding)}: "
-		full_line += line
-
-		if (max_length and len(full_line) > max_length):
-			full_line = full_line[:max_length - len(break_line)] + break_line
-
-		print(full_line)
-
-
 def send_email(from_email: str, to_email: str, password: str, subject="", body="", attachments=[]):
 	msg = EmailMessage()
 	msg["From"] = from_email
@@ -128,23 +111,49 @@ def send_email(from_email: str, to_email: str, password: str, subject="", body="
 		smtp.sendmail(from_email, to_email, msg.as_string())
 
 
+def print_text(text: str, line_numbers: bool = False, prefix: str = ""):
+	try:
+		max_length = os.get_terminal_size().columns
+	except:
+		max_length = None
+
+	break_line = "..."
+	padding = len(str(len(text.splitlines())))
+	for i, line in enumerate(text.splitlines()):
+		full_line = prefix
+		if (line_numbers): full_line += f"{str(i + 1).rjust(padding)}: "
+		full_line += line
+
+		if (max_length and len(full_line) > max_length):
+			full_line = full_line[:max_length - len(break_line)] + break_line
+
+		print(full_line)
+
+def print_sleep(string: str, seconds: int = 0):
+	padding = len(string.format(seconds))
+	for i in range(seconds, 0, -1):
+		print("\r" + (string.format(i)).ljust(padding), end="")
+		time.sleep(1)
+	print("\r" + " " * padding + "\r", end="")
+
+
 
 def main():
+	####
+	## Parse arguments and initialize driver
+	####
+
+	chime.theme("material")
+
+	ARGS = get_args()
+	DOMAIN = urlparse(ARGS["webpage"]).netloc
+
 	try:
-		ARGS = get_args()
-		DOMAIN = urlparse(ARGS["webpage"]).netloc
-
 		driver = init_driver()
-
-
-
-		####
-		## Open webpage
-		####
 
 		try:
 			driver.get(ARGS["webpage"])
-		except InvalidArgumentException:
+		except (InvalidArgumentException, WebDriverException):
 			print("Webpage URL is invalid. Please retry.")
 			sys.exit()
 
@@ -171,29 +180,30 @@ def main():
 		## Make first Fetch
 		####
 
-		driver.refresh()
-		time.sleep(ARGS["frequency"])
-
 		if (ARGS["input"]):
-			if (not ARGS["quiet"]):
-				print(f"Reading first fetch from \"{ARGS['input']}\"...")
-			with open(ARGS["input"], "r") as f:
-				first_fetch = f.read()
+			if (not os.path.exists(ARGS["input"])):
+				print(f"File \"{ARGS['input']}\" not found.")
+				sys.exit()
+			else:
+				with open(ARGS["input"], "r") as f:
+					first_fetch = f.read()
+				print(f"First fetch loaded from \"{ARGS['input']}\".")
 		else:
+			driver.refresh()
+			print_sleep("Waiting before the first fetch. {} seconds remaining...", ARGS["frequency"])
 			first_fetch = fetch_driver(driver, ARGS["selector"])
 
-		if (ARGS["quiet"]):
-			print("First fetch done. Waiting for changes...")
-		else:
-			print("\n#### First fetch: ####")
-			print_text(first_fetch, line_numbers=True)
-			print("")
+			if (ARGS["quiet"]):
+				print("First fetch done. Waiting for changes...")
+			else:
+				print("\n#### First fetch: ####")
+				print_text(first_fetch, line_numbers=True)
+				print()
 
-		if (ARGS["output"]):
-			if (not ARGS["quiet"]):
-				print(f"Saving fetch to \"{ARGS['output']}\"...")
+		if (ARGS["output"] and ARGS["input"] != ARGS["output"]):
 			with open(ARGS["output"], "w") as f:
 				f.write(first_fetch)
+			print(f"Saved fetch to \"{ARGS['output']}\"")
 
 
 
@@ -201,11 +211,15 @@ def main():
 		## Start watching
 		####
 
+		if (not ARGS["quiet"]):
+			print("Starting to watch. You can safely quit at any time by pressing \"Ctrl+C\".\n")
+
 		fetches = 0
 
 		while True:
 			driver.refresh()
-			time.sleep(ARGS["frequency"])
+			print_sleep(f"No changes detected ({fetches} fetches). Waiting {{}} seconds before the next one...", ARGS["frequency"])
+			print("\rFetching...", end="")
 
 			current_fetch = fetch_driver(driver, ARGS["selector"])
 
@@ -214,12 +228,16 @@ def main():
 			if (first_fetch != current_fetch):
 				diff = "\n".join(difflib.unified_diff(first_fetch.splitlines(), current_fetch.splitlines(), lineterm=""))
 
+				if (ARGS["alert"]):
+					chime.info()
+
+				print("\r", end="")
 				if (ARGS["quiet"]):
-					print("\nChanges detected!")
+					print(f"Changes detected after {fetches} fetches!")
 				else:
-					print("\n\n#### Changes detected! Diff: ####")
+					print(f"#### Changes detected after {fetches} fetches! Diff: ####")
 					print_text(diff)
-					print("")
+					print()
 
 				if (ARGS["output"]):
 					if (not ARGS["quiet"]):
@@ -235,10 +253,8 @@ def main():
 					first_fetch = current_fetch
 				else:
 					break
-			else:
-				print(f"\rNo changes detected ({fetches} fetches).", end="")
-	except KeyboardInterrupt:
-		print(f"\nStopped watching.")
+	except (KeyboardInterrupt, SystemExit):
+		print(f"Stopped watching.")
 
 
 
