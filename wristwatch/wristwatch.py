@@ -1,25 +1,28 @@
 #! venv/bin/python 
 
-import time, os, sys, argparse, difflib, rookiepy, chime
+import time, os, sys, argparse, difflib
 from urllib.parse import urlparse
 
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver import Chrome
-from selenium.common.exceptions import InvalidArgumentException, WebDriverException
-
 from bs4 import BeautifulSoup
 from bs4.formatter import HTMLFormatter
+import browser_cookie3, chime
 
 import smtplib, ssl
 from email.message import EmailMessage
 
 
-def get_args():
-	parser = argparse.ArgumentParser(description="Yet another Python watcher for website updates.", prog="wristwatch")
+debug_mode = False
+
+
+
+def get_args() -> dict:
+	parser = argparse.ArgumentParser(prog="wristwatch", description="Yet another Python watcher for website updates.")
 
 	parser.add_argument("webpage", type=str, help="The URL of the webpage to scrape.", metavar="URL")
 
-	parser.add_argument("-b", "--browser", type=str, help="Name of the browser to get cookies from (default: any).", default="load", choices=["brave", "chrome", "chromium", "edge", "firefox", "internet_explorer", "librewolf", "octo_browser", "opera", "opera_gx", "safari", "vivaldi"])
+	parser.add_argument("-b", "--browser", type=str, help="Name of the browser to get cookies from (by default, any browser possible).", default="load", choices=["brave", "chrome", "chromium", "edge", "firefox", "librewolf", "opera", "opera_gx", "safari", "vivaldi"])
 	parser.add_argument("-f", "--frequency", type=int, help="Frequency of fetches in seconds (default: 60).", default=60, metavar="SECONDS")
 	parser.add_argument("-s", "--selector", type=str, help="CSS selector of element(s) to scrape. Can be used multiple times.", action="extend", nargs="+")
 
@@ -34,45 +37,49 @@ def get_args():
 
 	parser.add_argument("-a", "--alert", help="Play a sound when changes are detected.", action="store_true")
 
-	parser.add_argument("-v", "--version", action="version", version="%(prog)s 1.1.0")
+	parser.add_argument("-v", "--version", action="version", version="%(prog)s 1.2.0")
+	parser.add_argument("-d", "--debug", help="Enable debug mode.", action="store_true")
 
 	return vars(parser.parse_args())
 
 
-def init_driver():
-	options = Options()
+def cookie_to_dict(cookie) -> dict:
+	cookie_dict = {
+		"name": getattr(cookie, "name", None),
+		"value": getattr(cookie, "value", None),
+		"path": getattr(cookie, "path", None),
+		"domain": getattr(cookie, "domain", None),
 
-	options.add_argument("--headless=new")
-	options.add_argument("--no-sandbox")
-	options.add_argument("--disable-dev-shm-usage")
-	options.add_argument("--disable-gpu")
-	options.add_argument("--start-maximized")
-	options.add_argument("--ignore-certificate-errors")
+		"secure": getattr(cookie, "secure", None) is True,
+		"httpOnly": "HTTPOnly" in getattr(cookie, "_rest", None),
+		"expiry": getattr(cookie, "expires", None),
 
-	# options.add_argument("--disable-infobars")
-	# options.add_argument("--disable-notifications")
+		# "sameSite" value not available in browser_cookie3
+	}
 
-	# options.add_experimental_option("excludeSwitches", ["enable-logging"])
+	if (debug_mode):
+		print(vars(cookie), "\n------------\n", cookie_dict, "\n")
 
-	driver = Chrome(options=options)
+	return cookie_dict
 
-	return driver
-
-def add_cookies(driver: Chrome, cookies: list = None):
+def add_cookies(driver: Chrome, cookies: list = None) -> int:
 	if (cookies is None):
 		return None
 	else:
 		errorCookies = 0
 
-		for cookie in cookies:
+		for (i, cookie) in enumerate(cookies):
 			try:
 				driver.add_cookie(cookie)
-			except Exception:
+			except BaseException as e:
+				if (debug_mode):
+					print(f"COOKIE NO. {i + 1}")
+					print(e)
 				errorCookies += 1
 
 		return len(cookies) - errorCookies
 
-def fetch_driver(driver: Chrome, selectors: str = None):
+def fetch_driver(driver: Chrome, selectors: str = None) -> str:
 	formatter = HTMLFormatter(indent=3)
 	soup = BeautifulSoup(driver.page_source, "html.parser")
 
@@ -90,28 +97,11 @@ def fetch_driver(driver: Chrome, selectors: str = None):
 		return fetch
 
 
-def send_email(from_email: str, to_email: str, password: str, subject="", body="", attachments=[]):
-	msg = EmailMessage()
-	msg["From"] = from_email
-	msg["To"] = to_email
-	msg["Subject"] = subject
-	msg.set_content(body)
-
-	for attachment in attachments:
-		with open(attachment, "rb") as f:
-			attachment_data = f.read()
-			attachment_name = os.path.basename(attachment)
-
-		msg.add_attachment(attachment_data, maintype="application", subtype="octet-stream", filename=attachment_name)
-
-	context = ssl.create_default_context()
-
-	with smtplib.SMTP_SSL("smtp.gmail.com", 465, context=context) as smtp:
-		smtp.login(from_email, password)
-		smtp.sendmail(from_email, to_email, msg.as_string())
-
-
 def print_text(text: str, line_numbers: bool = False, prefix: str = ""):
+	if (text == ""):
+		print("<empty>")
+		return
+
 	try:
 		max_length = os.get_terminal_size().columns
 	except:
@@ -137,6 +127,27 @@ def print_sleep(string: str, seconds: int = 0):
 	print("\r" + " " * padding + "\r", end="")
 
 
+def send_email(from_email: str, to_email: str, password: str, subject="", body="", attachments=[]):
+	msg = EmailMessage()
+	msg["From"] = from_email
+	msg["To"] = to_email
+	msg["Subject"] = subject
+	msg.set_content(body)
+
+	for attachment in attachments:
+		with open(attachment, "rb") as f:
+			attachment_data = f.read()
+			attachment_name = os.path.basename(attachment)
+
+		msg.add_attachment(attachment_data, maintype="application", subtype="octet-stream", filename=attachment_name)
+
+	context = ssl.create_default_context()
+
+	with smtplib.SMTP_SSL("smtp.gmail.com", 465, context=context) as smtp:
+		smtp.login(from_email, password)
+		smtp.sendmail(from_email, to_email, msg.as_string())
+
+
 
 def main():
 	####
@@ -148,13 +159,32 @@ def main():
 	ARGS = get_args()
 	DOMAIN = urlparse(ARGS["webpage"]).netloc
 
+	if (ARGS["debug"]):
+		global debug_mode
+		debug_mode = True
+		print("Debug mode enabled.")
+
+	if (debug_mode):
+		print(ARGS)
+
+	options = Options()
+	options.add_argument("--headless=new")
+	options.add_argument("--no-sandbox")
+	options.add_argument("--disable-dev-shm-usage")
+	options.add_argument("--disable-gpu")
+	options.add_argument("--ignore-certificate-errors")
+
+	driver = Chrome(options=options)
+
 	try:
-		driver = init_driver()
+		####
+		## Load the webpage
+		####
 
 		try:
 			driver.get(ARGS["webpage"])
-		except (InvalidArgumentException, WebDriverException):
-			print("Webpage URL is invalid. Please retry.")
+		except:
+			print("Failed to load the webpage. Please check the URL and ensure that your internet connection is working.")
 			sys.exit()
 
 
@@ -164,15 +194,16 @@ def main():
 		####
 
 		try:
-			cookies = getattr(rookiepy, ARGS["browser"])([DOMAIN])
+			cookies = getattr(browser_cookie3, ARGS["browser"])(domain_name=DOMAIN)
+			cookies = [cookie_to_dict(cookie) for cookie in cookies]
 
 			if (cookies):
 				addedCookies = add_cookies(driver, cookies)
 				print(f"Successfully added {addedCookies} cookies of {len(cookies)} found for \"{DOMAIN}\"")
 			else:
 				print(f"No cookies found for \"{DOMAIN}\"")
-		except:
-			print(f"\"{ARGS['browser']}\" browser not found.")
+		except browser_cookie3.BrowserCookieError:
+			print(f"\"{ARGS['browser'].capitalize()}\" browser not found. No cookies were loaded.")
 
 
 
@@ -218,7 +249,7 @@ def main():
 
 		while True:
 			driver.refresh()
-			print_sleep(f"No changes detected ({fetches} fetches). Waiting {{}} seconds before the next one...", ARGS["frequency"])
+			print_sleep(f"No changes detected ({fetches} fetches). Waiting {{}} seconds before the next fetch...", ARGS["frequency"])
 			print("\rFetching...", end="")
 
 			current_fetch = fetch_driver(driver, ARGS["selector"])
@@ -251,16 +282,16 @@ def main():
 
 				if (ARGS["loop"]):
 					first_fetch = current_fetch
+					fetches = 0
 				else:
 					break
-	except (KeyboardInterrupt, SystemExit):
-		print(f"Stopped watching.")
 
+	except BaseException as e:
+		if (e.__class__ in (KeyboardInterrupt, SystemExit) and not debug_mode):
+			print(f"\nStopped watching.")
+		else:
+			print(f"\n\"{e.__class__.__name__}\" Exception")
 
-
-	####
-	## Close drivers
-	####
-
-	print(f"Closing drivers...")
-	driver.quit()
+	finally:
+		print(f"Closing drivers...")
+		driver.quit()
