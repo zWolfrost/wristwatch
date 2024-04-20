@@ -43,7 +43,7 @@ pip install wristwatch
 &nbsp;
 ## Examples
 ```bash
-wristwatch "https://relaxingclock.com" -s "#minutes" -f 5 -a -l
+wristwatch "https://relaxingclock.com" -s ".hours" -s "#minutes" -a "text" -f 5 -c -l
 ```
 
 &nbsp;
