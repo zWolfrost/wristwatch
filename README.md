@@ -23,21 +23,22 @@ pip install wristwatch
 
 &nbsp;
 ## Arguments
-| Command       | Shorthand | Example                  | Description
-|:-:            |:-:        | :-:                      |:-
-|               |           | `https://example.com/`   | The URL of the webpage to scrape.
-| `--browser`   | `-b`      | `-b chrome`              | Name of the browser to get cookies from (by default, any browser possible). See `--help` for supported browsers.
-| `--frequency` | `-f`      | `-f 60`                  | Frequency of fetches in seconds (default: 60).
-| `--selector`  | `-s`      | `-s #minutes -s #hours`  | CSS selector of element(s) to scrape. Can be used multiple times.
-| `--email`     | `-e`      | `-e example@gmail.com`   | Email address to self-send the changes to.
-| `--password`  | `-p`      | `-p aaaa bbbb cccc dddd` | Email "app" password. [Here's a guide on how to generate one](https://support.google.com/accounts/answer/185833#app-passwords).
-| `--quiet`     | `-q`      | `-q`                     | Decrease output verbosity.
-| `--loop`      | `-l`      | `-l`                     | Keep watching for changes even after the first one.
-| `--output`    | `-o`      | `-o output.txt`          | Save the last fetch to a file.
-| `--input`     | `-i`      | `-i input.txt`           | Load the first fetch from a file.
-| `--alert`     | `-a`      | `-a`                     | Play a sound when changes are detected.
-| `--version`   | `-v`      | `-v`                     | Show the program's version.
-| `--help`      | `-h`      | `-h`                     | Show the help message on how to use the program.
+| Command            | Example                     | Description
+|:-:                 | :-:                         |:-
+|                    | `"https://example.com/"`    | The URL of the webpage to scrape.
+| `-b` `--browser`   | `-b "chrome"`               | Name of the browser to get cookies from (by default, any<br>browser possible). See `--help` for supported browsers.
+| `-f` `--frequency` | `-f 60`                     | Frequency of fetches in seconds (default: 60).
+| `-s` `--selector`  | `-s "#minutes" -s "#hours"` | CSS selector of element(s) to scrape. Can be used multiple times.
+| `-a` `--attribute` | `-a "href" -a "title"`      | Attribute of the element(s) to scrape. Can be used multiple times.<br>Can also be "text" to scrape the text content.
+| `-e` `--email`     | `-e "example@gmail.com"`    | Email address to self-send the changes to.
+| `-p` `--password`  | `-p "aaaa bbbb cccc dddd"`  | Email "app" password. [Here's a guide on how to generate one](https://support.google.com/accounts/answer/185833#app-passwords).
+| `-i` `--input`     | `-i "input.txt"`            | Load the first fetch from a file.
+| `-o` `--output`    | `-o "output.txt"`           | Save the last fetch to a file.
+| `-q` `--quiet`     | `-q`                        | Decrease output verbosity.
+| `-l` `--loop`      | `-l`                        | Keep watching for changes even after the first one.
+| `-c` `--chime`     | `-c`                        | Play a sound when changes are detected.
+| `-v` `--version`   | `-v`                        | Show the program's version.
+| `-h` `--help`      | `-h`                        | Show the help message on how to use the program.
 
 &nbsp;
 ## Examples
@@ -65,4 +66,8 @@ wristwatch "https://relaxingclock.com" -s "#minutes" -f 5 -a -l
 - **1.2.0**:
 <br>- Added `--debug` argument to show debug info & error messages.
 <br>- Changed "rookiepy" dependency for "browser-cookie3"
+<br>- Better error handling.
+- **1.3.0**:
+<br>- Added `--attribute` argument to scrape attributes and text content.
+<br>- Changed `--alert` argument name to `--chime`
 <br>- Better error handling.

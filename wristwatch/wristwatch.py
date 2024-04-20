@@ -5,8 +5,11 @@ from urllib.parse import urlparse
 
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver import Chrome
+
 from bs4 import BeautifulSoup
 from bs4.formatter import HTMLFormatter
+from soupsieve.util import SelectorSyntaxError
+
 import browser_cookie3, chime
 
 import smtplib, ssl
@@ -25,19 +28,19 @@ def get_args() -> dict:
 	parser.add_argument("-b", "--browser", type=str, help="Name of the browser to get cookies from (by default, any browser possible).", default="load", choices=["brave", "chrome", "chromium", "edge", "firefox", "librewolf", "opera", "opera_gx", "safari", "vivaldi"])
 	parser.add_argument("-f", "--frequency", type=int, help="Frequency of fetches in seconds (default: 60).", default=60, metavar="SECONDS")
 	parser.add_argument("-s", "--selector", type=str, help="CSS selector of element(s) to scrape. Can be used multiple times.", action="extend", nargs="+")
+	parser.add_argument("-a", "--attribute", type=str, help="Attribute of the element(s) to scrape. Can be used multiple times. Can also be \"text\" to scrape the text content.", action="extend", nargs="+")
 
 	parser.add_argument("-e", "--email", type=str, help="Email address to self-send the changes to.", required=("-p" in sys.argv or "--password" in sys.argv))
 	parser.add_argument("-p", "--password", type=str, help="Email \"app\" password. Here's a guide on how to generate one: https://support.google.com/accounts/answer/185833", required=("-e" in sys.argv or "--email" in sys.argv))
 
+	parser.add_argument("-i", "--input", type=str, help="Load the first fetch from a file.", metavar="FILE")
+	parser.add_argument("-o", "--output", type=str, help="Save the last fetch to a file.", metavar="FILE")
+
 	parser.add_argument("-q", "--quiet", help="Decrease output verbosity.", action="store_true")
 	parser.add_argument("-l", "--loop", help="Keep watching for changes even after the first one.", action="store_true")
+	parser.add_argument("-c", "--chime", help="Play a sound when changes are detected.", action="store_true")
 
-	parser.add_argument("-o", "--output", type=str, help="Save the last fetch to a file.", metavar="FILE")
-	parser.add_argument("-i", "--input", type=str, help="Load the first fetch from a file.", metavar="FILE")
-
-	parser.add_argument("-a", "--alert", help="Play a sound when changes are detected.", action="store_true")
-
-	parser.add_argument("-v", "--version", action="version", version="%(prog)s 1.2.0")
+	parser.add_argument("-v", "--version", action="version", version="%(prog)s 1.3.0")
 	parser.add_argument("-d", "--debug", help="Enable debug mode.", action="store_true")
 
 	return vars(parser.parse_args())
@@ -79,7 +82,7 @@ def add_cookies(driver: Chrome, cookies: list = None) -> int:
 
 		return len(cookies) - errorCookies
 
-def fetch_driver(driver: Chrome, selectors: str = None) -> str:
+def fetch_driver(driver: Chrome, selectors: list = None, attributes: list = None) -> str:
 	formatter = HTMLFormatter(indent=3)
 	soup = BeautifulSoup(driver.page_source, "html.parser")
 
@@ -89,10 +92,26 @@ def fetch_driver(driver: Chrome, selectors: str = None) -> str:
 		fetch = ""
 
 		for selector in selectors:
-			for i, element in enumerate(soup.select(selector)):
-				fetch += str(element.prettify(formatter=formatter))
-				if (i < len(soup.select(selector)) - 1):
-					fetch += "\n"
+
+			elements = soup.select(selector)
+
+			for i, el in enumerate(elements):
+				if (attributes):
+					for attributeName in attributes:
+						if (attributeName == "text"):
+							fetch += el.get_text() + "\n"
+						else:
+							attributeValue = el.get(attributeName, None)
+							if (attributeValue is not None):
+								if (isinstance(attributeValue, list)):
+									attributeValue = " ".join(attributeValue)
+								fetch += attributeValue + "\n"
+				else:
+					fetch += str(el.prettify(formatter=formatter))
+					if (i < len(elements) - 1):
+						fetch += "\n"
+
+		fetch = fetch.strip()
 
 		return fetch
 
@@ -120,11 +139,15 @@ def print_text(text: str, line_numbers: bool = False, prefix: str = ""):
 		print(full_line)
 
 def print_sleep(string: str, seconds: int = 0):
-	padding = len(string.format(seconds))
-	for i in range(seconds, 0, -1):
-		print("\r" + (string.format(i)).ljust(padding), end="")
-		time.sleep(1)
-	print("\r" + " " * padding + "\r", end="")
+	try:
+		padding = len(string.format(seconds))
+		for i in range(seconds, 0, -1):
+			print("\r" + (string.format(i)).ljust(padding), end="")
+			time.sleep(1)
+		print("\r" + " " * padding + "\r", end="")
+	except KeyboardInterrupt:
+		print("\b\b  ")
+		sys.exit()
 
 
 def send_email(from_email: str, to_email: str, password: str, subject="", body="", attachments=[]):
@@ -183,7 +206,7 @@ def main():
 
 		try:
 			driver.get(ARGS["webpage"])
-		except:
+		except Exception:
 			print("Failed to load the webpage. Please check the URL and ensure that your internet connection is working.")
 			sys.exit()
 
@@ -222,7 +245,12 @@ def main():
 		else:
 			driver.refresh()
 			print_sleep("Waiting before the first fetch. {} seconds remaining...", ARGS["frequency"])
-			first_fetch = fetch_driver(driver, ARGS["selector"])
+
+			try:
+				first_fetch = fetch_driver(driver, ARGS["selector"], ARGS["attribute"])
+			except SelectorSyntaxError as e:
+				print(f"\n{e.__class__.__name__}: {e}")
+				sys.exit()
 
 			if (ARGS["quiet"]):
 				print("First fetch done. Waiting for changes...")
@@ -252,14 +280,14 @@ def main():
 			print_sleep(f"No changes detected ({fetches} fetches). Waiting {{}} seconds before the next fetch...", ARGS["frequency"])
 			print("\rFetching...", end="")
 
-			current_fetch = fetch_driver(driver, ARGS["selector"])
+			current_fetch = fetch_driver(driver, ARGS["selector"], ARGS["attribute"])
 
 			fetches += 1
 
 			if (first_fetch != current_fetch):
 				diff = "\n".join(difflib.unified_diff(first_fetch.splitlines(), current_fetch.splitlines(), lineterm=""))
 
-				if (ARGS["alert"]):
+				if (ARGS["chime"]):
 					chime.info()
 
 				print("\r", end="")
@@ -286,11 +314,11 @@ def main():
 				else:
 					break
 
-	except BaseException as e:
-		if (e.__class__ in (KeyboardInterrupt, SystemExit) and not debug_mode):
-			print(f"\nStopped watching.")
+	except () if debug_mode else BaseException as e:
+		if (e.__class__ in (KeyboardInterrupt, SystemExit)):
+			print(f"Stopped watching.")
 		else:
-			print(f"\n\"{e.__class__.__name__}\" Exception")
+			print(f"\"{e.__class__.__name__}\" Exception")
 
 	finally:
 		print(f"Closing drivers...")

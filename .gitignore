@@ -96,4 +96,5 @@ ENV/
 # Project Specific settings
 # Add here additional items that are specific to the individual project
 todo.txt
-testing/
+build.sh
+publish.sh
